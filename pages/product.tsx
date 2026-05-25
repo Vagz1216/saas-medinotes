@@ -9,6 +9,30 @@ import remarkBreaks from 'remark-breaks';
 import { fetchEventSource } from '@microsoft/fetch-event-source';
 import { Protect, PricingTable, UserButton } from '@clerk/nextjs';
 
+type StreamPayload = {
+    detail?: string;
+    errors?: string[];
+    level?: 'info' | 'success' | 'warning' | 'error';
+    message?: string;
+    model?: string;
+    provider?: string;
+    text?: string;
+    wire_api?: string;
+};
+
+type StatusEntry = StreamPayload & {
+    id: number;
+    time: string;
+};
+
+function parsePayload(data: string): StreamPayload | null {
+    try {
+        return JSON.parse(data) as StreamPayload;
+    } catch {
+        return null;
+    }
+}
+
 function ConsultationForm() {
     const { getToken } = useAuth();
 
@@ -20,11 +44,29 @@ function ConsultationForm() {
     // Streaming state
     const [output, setOutput] = useState('');
     const [loading, setLoading] = useState(false);
+    const [activeModel, setActiveModel] = useState('');
+    const [statusLog, setStatusLog] = useState<StatusEntry[]>([]);
+
+    function appendStatus(payload: StreamPayload) {
+        const entry: StatusEntry = {
+            ...payload,
+            id: Date.now() + Math.random(),
+            time: new Date().toLocaleTimeString(),
+        };
+
+        setStatusLog((current) => [...current, entry].slice(-12));
+
+        if (payload.provider && payload.model && payload.level !== 'error' && payload.level !== 'warning') {
+            setActiveModel(`${payload.provider} / ${payload.model}`);
+        }
+    }
 
     async function handleSubmit(e: FormEvent) {
         e.preventDefault();
         setOutput('');
         setLoading(true);
+        setActiveModel('');
+        setStatusLog([]);
 
         const jwt = await getToken();
         if (!jwt) {
@@ -49,14 +91,52 @@ function ConsultationForm() {
                 notes,
             }),
             onmessage(ev) {
-                buffer += ev.data;
-                setOutput(buffer);
+                const payload = parsePayload(ev.data);
+
+                if (!payload) {
+                    buffer += ev.data;
+                    setOutput(buffer);
+                    return;
+                }
+
+                if (ev.event === 'token') {
+                    buffer += payload.text ?? '';
+                    setOutput(buffer);
+                    return;
+                }
+
+                if (ev.event === 'status') {
+                    appendStatus(payload);
+                    return;
+                }
+
+                if (ev.event === 'done') {
+                    appendStatus({
+                        ...payload,
+                        level: 'success',
+                    });
+                    setLoading(false);
+                    return;
+                }
+
+                if (ev.event === 'error') {
+                    appendStatus({
+                        ...payload,
+                        level: 'error',
+                    });
+                    setLoading(false);
+                }
             },
             onclose() { 
                 setLoading(false); 
             },
             onerror(err) {
                 console.error('SSE error:', err);
+                appendStatus({
+                    level: 'error',
+                    message: 'The streaming connection failed.',
+                    detail: String(err),
+                });
                 controller.abort();
                 setLoading(false);
             },
@@ -123,6 +203,58 @@ function ConsultationForm() {
                     {loading ? 'Generating Summary...' : 'Generate Summary'}
                 </button>
             </form>
+
+            {(loading || statusLog.length > 0) && (
+                <section className="mt-8 bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-4">
+                        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                            Generation status
+                        </h2>
+                        {activeModel && (
+                            <span className="text-xs font-medium text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/40 px-3 py-1 rounded-full">
+                                {activeModel}
+                            </span>
+                        )}
+                    </div>
+                    <ol className="space-y-3">
+                        {statusLog.map((entry) => (
+                            <li key={entry.id} className="flex gap-3 text-sm">
+                                <span
+                                    className={[
+                                        'mt-1 h-2.5 w-2.5 shrink-0 rounded-full',
+                                        entry.level === 'success' ? 'bg-green-500' : '',
+                                        entry.level === 'warning' ? 'bg-amber-500' : '',
+                                        entry.level === 'error' ? 'bg-red-500' : '',
+                                        !entry.level || entry.level === 'info' ? 'bg-blue-500' : '',
+                                    ].join(' ')}
+                                />
+                                <div className="min-w-0">
+                                    <p className="text-gray-800 dark:text-gray-200">
+                                        {entry.message}
+                                    </p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                                        {entry.time}
+                                        {entry.provider && entry.model ? ` • ${entry.provider} • ${entry.model}` : ''}
+                                        {entry.wire_api ? ` • ${entry.wire_api}` : ''}
+                                    </p>
+                                    {entry.detail && (
+                                        <p className="mt-1 break-words text-xs text-gray-500 dark:text-gray-400">
+                                            {entry.detail}
+                                        </p>
+                                    )}
+                                    {entry.errors && entry.errors.length > 0 && (
+                                        <ul className="mt-2 list-disc pl-5 text-xs text-gray-500 dark:text-gray-400">
+                                            {entry.errors.map((error) => (
+                                                <li key={error}>{error}</li>
+                                            ))}
+                                        </ul>
+                                    )}
+                                </div>
+                            </li>
+                        ))}
+                    </ol>
+                </section>
+            )}
 
             {output && (
                 <section className="mt-8 bg-gray-50 dark:bg-gray-800 rounded-xl shadow-lg p-8">
