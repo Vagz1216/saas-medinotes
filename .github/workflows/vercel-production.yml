@@ -31,13 +31,11 @@ jobs:
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
 
-      - name: Create Vercel project link
+      - name: Check Vercel CI configuration
         run: |
           test -n "$VERCEL_ORG_ID"
           test -n "$VERCEL_PROJECT_ID"
           test -n "$VERCEL_TOKEN"
-          mkdir -p .vercel
-          printf '{"orgId":"%s","projectId":"%s"}' "$VERCEL_ORG_ID" "$VERCEL_PROJECT_ID" > .vercel/project.json
 
       - name: Pull Vercel environment
         run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
