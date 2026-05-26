@@ -11,8 +11,8 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID || secrets.VERCEL_ORG_ID }}
-      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID || secrets.VERCEL_PROJECT_ID }}
+      VERCEL_ORG_ID: team_QQR5ALYns9jcrPFLHj2G4orp
+      VERCEL_PROJECT_ID: prj_ELxUf5k1GV8sH4lS66Sk5OyCFhWe
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       VERCEL_CLI_VERSION: 54.4.1
 
@@ -36,7 +36,7 @@ jobs:
         run: |
           missing=0
 
-          for name in VERCEL_ORG_ID VERCEL_PROJECT_ID VERCEL_TOKEN; do
+          for name in VERCEL_TOKEN; do
             if [ -z "${!name}" ]; then
               echo "::error title=Missing Vercel configuration::$name is required for production deployment."
               missing=1
@@ -44,6 +44,9 @@ jobs:
           done
 
           exit "$missing"
+
+      - name: Verify Vercel token
+        run: vercel whoami --token="$VERCEL_TOKEN" >/dev/null
 
       - name: Create Vercel project link
         run: |
