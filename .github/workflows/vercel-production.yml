@@ -14,7 +14,7 @@ jobs:
       VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID || secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID || secrets.VERCEL_PROJECT_ID }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      VERCEL_CLI_VERSION: 50.40.0
+      VERCEL_CLI_VERSION: 54.4.1
 
     steps:
       - name: Check out repository
@@ -44,6 +44,11 @@ jobs:
           done
 
           exit "$missing"
+
+      - name: Create Vercel project link
+        run: |
+          mkdir -p .vercel
+          printf '{"orgId":"%s","projectId":"%s"}' "$VERCEL_ORG_ID" "$VERCEL_PROJECT_ID" > .vercel/project.json
 
       - name: Pull Vercel environment
         run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
