@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, FormEvent } from 'react';
+import Head from 'next/head';
 import { useAuth } from '@clerk/nextjs';
 import DatePicker from 'react-datepicker';
 import ReactMarkdown from 'react-markdown';
@@ -33,6 +34,14 @@ function parsePayload(data: string): StreamPayload | null {
     }
 }
 
+async function responsePreview(response: Response): Promise<string> {
+    try {
+        return (await response.text()).slice(0, 500);
+    } catch {
+        return 'Unable to read response body.';
+    }
+}
+
 function ConsultationForm() {
     const { getToken } = useAuth();
 
@@ -54,7 +63,7 @@ function ConsultationForm() {
             time: new Date().toLocaleTimeString(),
         };
 
-        setStatusLog((current) => [...current, entry].slice(-12));
+        setStatusLog((current) => [...current, entry].slice(-30));
 
         if (payload.provider && payload.model && payload.level !== 'error' && payload.level !== 'warning') {
             setActiveModel(`${payload.provider} / ${payload.model}`);
@@ -78,69 +87,95 @@ function ConsultationForm() {
         const controller = new AbortController();
         let buffer = '';
 
-        await fetchEventSource('/api', {
-            signal: controller.signal,
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${jwt}`,
-            },
-            body: JSON.stringify({
-                patient_name: patientName,
-                date_of_visit: visitDate?.toISOString().slice(0, 10),
-                notes,
-            }),
-            onmessage(ev) {
-                const payload = parsePayload(ev.data);
+        try {
+            await fetchEventSource('/api', {
+                signal: controller.signal,
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${jwt}`,
+                },
+                body: JSON.stringify({
+                    patient_name: patientName,
+                    date_of_visit: visitDate?.toISOString().slice(0, 10),
+                    notes,
+                }),
+                async onopen(response) {
+                    const contentType = response.headers.get('content-type') ?? '';
 
-                if (!payload) {
-                    buffer += ev.data;
-                    setOutput(buffer);
-                    return;
-                }
+                    if (!response.ok) {
+                        throw new Error(`API request failed with HTTP ${response.status}: ${await responsePreview(response)}`);
+                    }
 
-                if (ev.event === 'token') {
-                    buffer += payload.text ?? '';
-                    setOutput(buffer);
-                    return;
-                }
+                    if (!contentType.includes('text/event-stream')) {
+                        throw new Error(
+                            `API did not return an event stream. Received ${contentType || 'no content type'}. ` +
+                            `In local development, run npm run dev:api in a second terminal.`
+                        );
+                    }
+                },
+                onmessage(ev) {
+                    const payload = parsePayload(ev.data);
 
-                if (ev.event === 'status') {
-                    appendStatus(payload);
-                    return;
-                }
+                    if (!payload) {
+                        buffer += ev.data;
+                        setOutput(buffer);
+                        return;
+                    }
 
-                if (ev.event === 'done') {
-                    appendStatus({
-                        ...payload,
-                        level: 'success',
-                    });
+                    if (ev.event === 'token') {
+                        buffer += payload.text ?? '';
+                        setOutput(buffer);
+                        return;
+                    }
+
+                    if (ev.event === 'status') {
+                        appendStatus(payload);
+                        return;
+                    }
+
+                    if (ev.event === 'done') {
+                        appendStatus({
+                            ...payload,
+                            level: 'success',
+                        });
+                        setLoading(false);
+                        return;
+                    }
+
+                    if (ev.event === 'error') {
+                        appendStatus({
+                            ...payload,
+                            level: 'error',
+                        });
+                        setLoading(false);
+                    }
+                },
+                onclose() {
                     setLoading(false);
-                    return;
-                }
-
-                if (ev.event === 'error') {
+                },
+                onerror(err) {
+                    console.error('SSE error:', err);
                     appendStatus({
-                        ...payload,
                         level: 'error',
+                        message: 'The streaming connection failed.',
+                        detail: err instanceof Error ? err.message : String(err),
                     });
+                    controller.abort();
                     setLoading(false);
-                }
-            },
-            onclose() { 
-                setLoading(false); 
-            },
-            onerror(err) {
-                console.error('SSE error:', err);
+                    throw err;
+                },
+            });
+        } catch (err) {
+            if (!controller.signal.aborted) {
                 appendStatus({
                     level: 'error',
-                    message: 'The streaming connection failed.',
-                    detail: String(err),
+                    message: 'The request could not be completed.',
+                    detail: err instanceof Error ? err.message : String(err),
                 });
-                controller.abort();
-                setLoading(false);
-            },
-        });
+            }
+            setLoading(false);
+        }
     }
 
     return (
@@ -271,33 +306,42 @@ function ConsultationForm() {
 
 export default function Product() {
     return (
-        <main className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
-            {/* User Menu in Top Right */}
-            <div className="absolute top-4 right-4">
-                <UserButton showName={true} />
-            </div>
+        <>
+            <Head>
+                <title>Consultation Notes | MediNotes Pro</title>
+                <meta
+                    name="description"
+                    content="Generate consultation summaries, doctor next steps, and patient-friendly emails"
+                />
+            </Head>
+            <main className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
+                {/* User Menu in Top Right */}
+                <div className="absolute top-4 right-4">
+                    <UserButton showName={true} />
+                </div>
 
-            {/* Subscription Protection */}
-            <Protect
-                plan="premium_subscription"
-                fallback={
-                    <div className="container mx-auto px-4 py-12">
-                        <header className="text-center mb-12">
-                            <h1 className="text-5xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent mb-4">
-                                Healthcare Professional Plan
-                            </h1>
-                            <p className="text-gray-600 dark:text-gray-400 text-lg mb-8">
-                                Streamline your patient consultations with AI-powered summaries
-                            </p>
-                        </header>
-                        <div className="max-w-4xl mx-auto">
-                            <PricingTable />
+                {/* Subscription Protection */}
+                <Protect
+                    plan="premium_subscription"
+                    fallback={
+                        <div className="container mx-auto px-4 py-12">
+                            <header className="text-center mb-12">
+                                <h1 className="text-5xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent mb-4">
+                                    Healthcare Professional Plan
+                                </h1>
+                                <p className="text-gray-600 dark:text-gray-400 text-lg mb-8">
+                                    Streamline your patient consultations with AI-powered summaries
+                                </p>
+                            </header>
+                            <div className="max-w-4xl mx-auto">
+                                <PricingTable />
+                            </div>
                         </div>
-                    </div>
-                }
-            >
-                <ConsultationForm />
-            </Protect>
-        </main>
+                    }
+                >
+                    <ConsultationForm />
+                </Protect>
+            </main>
+        </>
     );
 }

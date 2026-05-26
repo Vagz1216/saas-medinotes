@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:api": "env -u AZURE_OPENAI_API_KEY -u AZURE_OPENAI_ENDPOINT -u AZURE_OPENAI_API_VERSION -u AZURE_OPENAI_DEPLOYMENT -u AZURE_OPENAI_WIRE_API -u OPENAI_API_KEY -u OPENROUTER_API_KEY -u CEREBRAS_API_KEY -u GROQ_API_KEY uv run --env-file .env.local --with-requirements requirements.txt uvicorn api.index:app --host 127.0.0.1 --port 8001",
+    "check:env": "node scripts/check-env.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"

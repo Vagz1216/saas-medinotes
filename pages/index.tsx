@@ -1,12 +1,21 @@
 "use client"
 
 import Link from 'next/link';
+import Head from 'next/head';
 import { SignInButton, SignedIn, SignedOut, UserButton } from '@clerk/nextjs';
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
-      <div className="container mx-auto px-4 py-12">
+    <>
+      <Head>
+        <title>MediNotes Pro</title>
+        <meta
+          name="description"
+          content="AI-powered consultation notes summaries and patient email drafts for healthcare professionals"
+        />
+      </Head>
+      <main className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
+        <div className="container mx-auto px-4 py-12">
         {/* Navigation */}
         <nav className="flex justify-between items-center mb-12">
           <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-200">
@@ -99,7 +108,8 @@ export default function Home() {
         <div className="text-center text-sm text-gray-500 dark:text-gray-400">
           <p>HIPAA Compliant • Secure • Professional</p>
         </div>
-      </div>
-    </main>
+        </div>
+      </main>
+    </>
   );
 }
